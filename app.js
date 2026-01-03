@@ -1,149 +1,158 @@
 /**
- * NOOR QURAN ENGINE
- * Developed by Fatehin Alam (Fatehin03)
+ * Noor Quran Engine - High End Build
+ * Developer: Fatehin Alam
  */
 
-const CONFIG = {
-    API: "https://api.alquran.cloud/v1",
-    EDITIONS: {
-        AR: "quran-uthmani",
-        EN: "en.asad",
-        BN: "bn.bengali"
-    }
-};
-
+const API = "https://api.alquran.cloud/v1";
 const state = {
     surahs: [],
-    currentAyahs: [],
+    ayahs: [],
+    currentSurah: null,
     audio: new Audio(),
     isPlaying: false,
-    activeAyahIndex: 0
+    activeIndex: 0
 };
 
-// 1. Initial Load
-document.addEventListener('DOMContentLoaded', async () => {
+// Initial Load
+window.onload = async () => {
     await fetchSurahs();
-    loadSurah(1); // Default to Fatiha
-});
+    loadSurah(1); // Auto-load Fatiha
+};
 
-// 2. Fetch Surah List for Sidebar
 async function fetchSurahs() {
-    try {
-        const response = await fetch(`${CONFIG.API}/surah`);
-        const data = await response.json();
-        state.surahs = data.data;
-        renderSidebar();
-    } catch (err) {
-        console.error("Sidebar Error:", err);
-    }
+    const res = await fetch(`${API}/surah`);
+    const data = await res.json();
+    state.surahs = data.data;
+    renderSidebar(state.surahs);
 }
 
-function renderSidebar() {
-    const sidebar = document.getElementById('surahList');
-    sidebar.innerHTML = state.surahs.map(s => `
-        <div onclick="loadSurah(${s.number})" class="p-4 border-b border-slate-50 hover:bg-emerald-50 cursor-pointer transition flex items-center gap-4 group">
-            <span class="text-xs font-bold text-slate-300 group-hover:text-emerald-500">${s.number}</span>
-            <div>
-                <h4 class="text-sm font-bold text-slate-700">${s.englishName}</h4>
-                <p class="text-[10px] text-slate-400 uppercase tracking-tighter">${s.name} • ${s.numberOfAyahs} Ayahs</p>
+function renderSidebar(list) {
+    const sidebar = document.getElementById('surahSidebar');
+    sidebar.innerHTML = list.map(s => `
+        <div onclick="loadSurah(${s.number})" id="s-${s.number}" class="surah-item p-4 border-b border-slate-50 hover:bg-slate-50 cursor-pointer transition flex items-center justify-between group">
+            <div class="flex items-center gap-4">
+                <span class="text-xs font-bold text-slate-300 group-hover:text-emerald-500">${s.number}</span>
+                <div>
+                    <h4 class="text-sm font-bold text-slate-700">${s.englishName}</h4>
+                    <p class="text-[10px] text-slate-400 uppercase tracking-tighter">${s.englishNameTranslation}</p>
+                </div>
+            </div>
+            <div class="text-right">
+                <div class="arabic text-sm text-emerald-700 font-bold">${s.name}</div>
+                <div class="text-[9px] text-slate-400">${s.numberOfAyahs} Ayahs</div>
             </div>
         </div>
     `).join('');
 }
 
-// 3. Main Data Fetcher (Parallel Async)
 async function loadSurah(num) {
-    const container = document.getElementById('contentArea');
-    container.innerHTML = `<div class="py-20 text-center"><div class="loading-spin w-12 h-12 border-4 border-slate-200 rounded-full mx-auto"></div><p class="mt-4 text-slate-400 animate-pulse">Synchronizing Ayahs...</p></div>`;
+    // UI Feedback
+    document.querySelectorAll('.surah-item').forEach(el => el.classList.remove('surah-card-active'));
+    document.getElementById(`s-${num}`)?.classList.add('surah-card-active');
     
+    const ayahsBox = document.getElementById('ayahList');
+    const headerBox = document.getElementById('surahHeader');
+    
+    ayahsBox.innerHTML = `<div class="py-20 text-center text-slate-400">Loading Surah Data...</div>`;
+
     try {
-        // Fetch Arabic, English, and Bangla simultaneously
-        const [ar, en, bn] = await Promise.all([
-            fetch(`${CONFIG.API}/surah/${num}/${CONFIG.EDITIONS.AR}`).then(r => r.json()),
-            fetch(`${CONFIG.API}/surah/${num}/${CONFIG.EDITIONS.EN}`).then(r => r.json()),
-            fetch(`${CONFIG.API}/surah/${num}/${CONFIG.EDITIONS.BN}`).then(r => r.json())
+        const [arRes, enRes, bnRes] = await Promise.all([
+            fetch(`${API}/surah/${num}/quran-uthmani`),
+            fetch(`${API}/surah/${num}/en.asad`),
+            fetch(`${API}/surah/${num}/bn.bengali`)
         ]);
 
-        state.currentAyahs = ar.data.ayahs.map((a, i) => ({
+        const ar = await arRes.json();
+        const en = await enRes.json();
+        const bn = await bnRes.json();
+
+        state.currentSurah = ar.data;
+        state.ayahs = ar.data.ayahs.map((a, i) => ({
             ...a,
             en: en.data.ayahs[i].text,
-            bn: bn.data.ayahs[i].text,
-            surahName: ar.data.englishName
+            bn: bn.data.ayahs[i].text
         }));
 
-        renderContent(ar.data);
-        document.getElementById('mainScroll').scrollTop = 0;
+        renderHeader(ar.data);
+        renderAyahs();
+        document.getElementById('mainContainer').scrollTop = 0;
     } catch (err) {
-        container.innerHTML = `<div class="p-10 text-red-500 text-center">Connection Failed. Please try again.</div>`;
+        ayahsBox.innerHTML = `<div class="text-red-500">Error loading data.</div>`;
     }
 }
 
-// 4. Content Renderer
-function renderContent(meta) {
-    const container = document.getElementById('contentArea');
-    container.innerHTML = `
-        <div class="text-center py-10">
-            <h2 class="text-5xl font-bold text-emerald-900 arabic mb-4">${meta.name}</h2>
-            <p class="text-slate-400 uppercase tracking-[0.3em] text-xs font-bold">${meta.englishName} • ${meta.englishNameTranslation}</p>
+function renderHeader(s) {
+    const box = document.getElementById('surahHeader');
+    box.innerHTML = `
+        <div class="bg-gradient-to-br from-emerald-600 to-teal-800 rounded-3xl p-8 text-white shadow-xl shadow-emerald-100 relative overflow-hidden">
+            <div class="relative z-10 text-center">
+                <h2 class="text-5xl font-bold arabic mb-2">${s.name}</h2>
+                <h3 class="text-2xl font-bold mb-1">${s.englishName}</h3>
+                <p class="text-emerald-100 text-sm uppercase tracking-widest border-t border-emerald-500/30 pt-2 inline-block">
+                    ${s.revelationType} • ${s.numberOfAyahs} Verses
+                </p>
+            </div>
+            <div class="absolute -right-10 -bottom-10 text-9xl text-white/5 font-bold arabic">${s.name}</div>
         </div>
     `;
-
-    state.currentAyahs.forEach((ayah, i) => {
-        const card = document.createElement('div');
-        card.className = "ayah-card bg-white p-6 md:p-8 rounded-3xl border border-slate-100 shadow-sm transition-all duration-300";
-        card.innerHTML = `
-            <div class="flex justify-between items-center mb-8">
-                <span class="w-10 h-10 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center text-xs font-bold">${ayah.numberInSurah}</span>
-                <button onclick="playAudio(${i})" class="text-slate-300 hover:text-emerald-500 transition">
-                    <svg class="w-8 h-8" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
-                </button>
-            </div>
-            <p class="arabic text-3xl md:text-4xl text-right text-slate-800 mb-10 leading-relaxed font-bold">${ayah.text}</p>
-            <div class="space-y-4 border-t border-slate-50 pt-8">
-                <p class="text-slate-600 leading-relaxed text-sm md:text-base"><strong class="text-[10px] text-slate-300 mr-2 uppercase">EN</strong>${ayah.en}</p>
-                <p class="bangla text-emerald-800 leading-relaxed text-base md:text-lg"><strong class="text-[10px] text-emerald-200 mr-2 uppercase">BN</strong>${ayah.bn}</p>
-            </div>
-        `;
-        container.appendChild(card);
-    });
 }
 
-// 5. Audio Control System
+function renderAyahs() {
+    const box = document.getElementById('ayahList');
+    box.innerHTML = state.ayahs.map((a, i) => `
+        <div class="ayah-card bg-white p-6 rounded-2xl">
+            <div class="flex justify-between items-center mb-6">
+                <span class="text-[10px] font-bold bg-slate-100 text-slate-500 px-3 py-1 rounded-full">AYAH ${a.numberInSurah}</span>
+                <div class="flex gap-4">
+                    <button onclick="playAudio(${i})" class="text-emerald-600 hover:scale-110 transition">▶ Play</button>
+                    <button class="text-slate-300 hover:text-yellow-500">★</button>
+                </div>
+            </div>
+            <p class="arabic text-3xl text-right mb-8 leading-loose font-bold text-slate-800">${a.text}</p>
+            <p class="text-slate-600 text-sm mb-4 leading-relaxed"><span class="font-bold text-slate-300 mr-2">EN</span>${a.en}</p>
+            <p class="bangla text-emerald-800 text-sm leading-relaxed"><span class="font-bold text-emerald-200 mr-2">BN</span>${a.bn}</p>
+        </div>
+    `).join('');
+}
+
 function playAudio(index) {
-    state.activeAyahIndex = index;
-    const ayah = state.currentAyahs[index];
+    state.activeIndex = index;
+    const ayah = state.ayahs[index];
     
-    // Alafasy Recitation Stream
+    document.getElementById('audioBar').classList.remove('translate-y-full');
+    document.getElementById('p-surah').innerText = state.currentSurah.englishName;
+    document.getElementById('p-ayah').innerText = `Ayah ${ayah.numberInSurah}`;
+
     state.audio.src = `https://cdn.islamic.network/quran/audio/128/ar.alafasy/${ayah.number}.mp3`;
     state.audio.play();
     state.isPlaying = true;
+    document.getElementById('playIcon').innerText = "⏸";
 
-    // UI Updates
-    document.getElementById('player').classList.remove('translate-y-full');
-    document.getElementById('playerSurahName').innerText = ayah.surahName;
-    document.getElementById('playerAyahNum').innerText = `Ayah ${ayah.numberInSurah}`;
-    
-    state.audio.onended = () => {
-        if (state.activeAyahIndex < state.currentAyahs.length - 1) {
-            playAudio(state.activeAyahIndex + 1);
-        }
-    };
+    state.audio.onended = () => changeAyah(1);
+}
+
+function togglePlay() {
+    if (state.isPlaying) {
+        state.audio.pause();
+        document.getElementById('playIcon').innerText = "▶";
+    } else {
+        state.audio.play();
+        document.getElementById('playIcon').innerText = "⏸";
+    }
+    state.isPlaying = !state.isPlaying;
 }
 
 function changeAyah(dir) {
-    const next = state.activeAyahIndex + dir;
-    if (next >= 0 && next < state.currentAyahs.length) {
-        playAudio(next);
-    }
+    const next = state.activeIndex + dir;
+    if (next >= 0 && next < state.ayahs.length) playAudio(next);
 }
 
-// Search Logic (Surah Filter)
-document.getElementById('searchInput').addEventListener('input', (e) => {
-    const query = e.target.value.toLowerCase();
-    const sidebarItems = document.querySelectorAll('#surahList > div');
-    
-    sidebarItems.forEach((item, index) => {
-        const name = state.surahs[index].englishName.toLowerCase();
-        item.style.display = name.includes(query) ? 'flex' : 'none';
-    });
+// Search Feature
+document.getElementById('surahSearch').addEventListener('input', (e) => {
+    const val = e.target.value.toLowerCase();
+    const filtered = state.surahs.filter(s => 
+        s.englishName.toLowerCase().includes(val) || 
+        s.number.toString() === val
+    );
+    renderSidebar(filtered);
 });
